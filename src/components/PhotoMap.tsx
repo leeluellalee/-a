@@ -89,16 +89,17 @@ function CustomControls({ showToast }: { showToast: (msg: string, type: 'error' 
           })} 
         />
       )}
-      <div className="leaflet-bottom leaflet-right" style={{ position: 'absolute', zIndex: 1000, bottom: '20px', right: '0px' }}>
-        <div className="leaflet-control leaflet-bar" style={{ margin: '0 10px 10px 0' }}>
+      <div style={{ position: 'absolute', zIndex: 1000, bottom: '40px', right: '10px' }}>
+        <div className="leaflet-control leaflet-bar" style={{ border: 'none', margin: 0, boxShadow: '0 1px 5px rgba(0,0,0,0.65)' }}>
           <button
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
               handleLocate();
             }}
-            className="flex items-center justify-center w-[34px] h-[34px] bg-white hover:bg-gray-100 text-black transition-colors"
+            className="flex items-center justify-center w-[34px] h-[34px] bg-white hover:bg-gray-100 text-black transition-colors rounded"
             title="定位到我的位置"
+            style={{ borderRadius: '4px' }}
           >
             <LocateFixed size={20} className={isLocating ? 'animate-pulse text-blue-500' : 'text-gray-700'} />
           </button>
