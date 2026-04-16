@@ -12,7 +12,7 @@ export default function App() {
   const [editingLocation, setEditingLocation] = useState<LocationData | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'error' | 'success' | 'warning'} | null>(null);
-  const [isViewMode, setIsViewMode] = useState(false); // Toggle for public view simulation
+  const [isViewMode, setIsViewMode] = useState(true); // Toggle for public view simulation
   const [showMobileSidebar, setShowMobileSidebar] = useState(false); // Toggle for mobile view
   
   const fileInputRef = useRef<HTMLInputElement>(null);
