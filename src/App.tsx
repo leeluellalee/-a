@@ -42,7 +42,7 @@ export default function App() {
 
       // 2. If no local data, try to fetch from a static file (for GitHub Pages deployment)
       try {
-        const response = await fetch('/locations.json');
+        const response = await fetch('./locations.json');
         if (response.ok) {
           const staticData = await response.json();
           setLocations(staticData);
