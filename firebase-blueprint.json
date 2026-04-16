@@ -1,0 +1,27 @@
+{
+  "entities": {
+    "Location": {
+      "title": "Location",
+      "description": "A pilgrimage location with photos and details.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Title of the location" },
+        "description": { "type": "string", "description": "Description of the location" },
+        "lat": { "type": "number", "description": "Latitude" },
+        "lng": { "type": "number", "description": "Longitude" },
+        "realPhotoUrl": { "type": "string", "description": "URL of the real photo" },
+        "refPhotoUrl": { "type": "string", "description": "URL of the reference photo (anime screenshot)" },
+        "copyright": { "type": "string", "description": "Copyright text" },
+        "createdAt": { "type": "timestamp", "description": "Creation timestamp" },
+        "authorUid": { "type": "string", "description": "UID of the creator" }
+      },
+      "required": ["title", "lat", "lng", "realPhotoUrl", "copyright", "authorUid"]
+    }
+  },
+  "firestore": {
+    "/locations/{locationId}": {
+      "schema": { "$ref": "#/entities/Location" },
+      "description": "Stores all pilgrimage locations."
+    }
+  }
+}

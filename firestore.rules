@@ -1,0 +1,103 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: locations
+    // Document ID: auto-generated
+    // Fields:
+    //   - title: string (required, max 100 chars)
+    //   - description: string (optional, max 2000 chars)
+    //   - lat: number (required)
+    //   - lng: number (required)
+    //   - realPhotoUrl: string (required, max 1000 chars)
+    //   - refPhotoUrl: string (optional, max 1000 chars)
+    //   - copyright: string (required, max 200 chars)
+    //   - createdAt: timestamp (required)
+    //   - authorUid: string (required, immutable)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.email == "leeyoutuebeagt@gmail.com" && 
+             request.auth.token.email_verified == true;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.authorUid;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+             request.resource.data[field].size() >= minLen &&
+             request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    function uidUnchanged() {
+      return !('authorUid' in request.resource.data) ||
+             request.resource.data.authorUid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('authorUid' in request.resource.data) ||
+             request.resource.data.authorUid == resource.data.authorUid;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidLocation(data) {
+      return hasRequiredFields(['title', 'lat', 'lng', 'realPhotoUrl', 'copyright', 'authorUid']) &&
+             isValidStringLength('title', 1, 100) &&
+             isValidOptionalString('description', 0, 2000) &&
+             data.lat is number &&
+             data.lng is number &&
+             isValidStringLength('realPhotoUrl', 1, 1000) &&
+             isValidOptionalString('refPhotoUrl', 0, 1000) &&
+             isValidStringLength('copyright', 1, 200) &&
+             data.authorUid is string;
+    }
+
+    match /locations/{locationId} {
+      // Anyone can read locations
+      allow read: if true;
+      
+      // Only Admin can create, and must provide valid data
+      allow create: if isAdmin() && 
+                    isValidLocation(request.resource.data) && 
+                    uidUnchanged();
+                    
+      // Only Admin can update, must provide valid data, and cannot change authorUid
+      allow update: if isAdmin() && 
+                    isValidLocation(request.resource.data) && 
+                    uidNotModified();
+                    
+      // Only Admin can delete
+      allow delete: if isAdmin();
+    }
+  }
+}

@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #F5F2ED;
+  --color-ink: #1A1A1A;
+  --color-accent: #C4A484;
+  --font-display: Georgia, serif;
+  --font-sans: "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* Leaflet map tweaks for artistic flair */
+.leaflet-container {
+  background: #EBE7E0 !important;
+}
+.leaflet-tile-pane {
+  filter: grayscale(100%) opacity(0.5) sepia(30%) hue-rotate(-10deg);
+}
+
+/* Custom Photo Marker */
+.custom-photo-marker {
+  background: transparent;
+  border: none;
+}
+.photo-marker-inner {
+  background: white;
+  padding: 6px 6px 24px 6px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+  width: 100%;
+  height: 100%;
+  transition: transform 0.3s ease;
+  position: relative;
+}
+.photo-marker-inner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #eee;
+}
+.custom-photo-marker:hover .photo-marker-inner {
+  transform: scale(1.1) rotate(3deg);
+  z-index: 1000;
+}
+
+/* Custom Popup matching Active View */
+.custom-popup .leaflet-popup-content-wrapper {
+  background: white;
+  border: 1px solid rgba(0,0,0,0.05);
+  border-radius: 0;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+  padding: 0;
+}
+.custom-popup .leaflet-popup-content {
+  margin: 0;
+  padding: 20px;
+  width: 280px !important;
+}
+.custom-popup .leaflet-popup-tip {
+  background: white;
+  border: 1px solid rgba(0,0,0,0.05);
+}
