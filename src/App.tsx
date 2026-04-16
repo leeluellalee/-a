@@ -7,12 +7,13 @@ import EditLocationModal from './components/EditLocationModal';
 import { LocationData } from './types';
 
 export default function App() {
+  const isEditModeEnabled = typeof window !== 'undefined' && window.location.search.includes('edit=1');
   const [locations, setLocations] = useState<LocationData[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(null);
   const [editingLocation, setEditingLocation] = useState<LocationData | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'error' | 'success' | 'warning'} | null>(null);
-  const [isViewMode, setIsViewMode] = useState(true); // Toggle for public view simulation
+  const [isViewMode, setIsViewMode] = useState(!isEditModeEnabled); // Defaults to true unless ?edit=1 is present
   const [showMobileSidebar, setShowMobileSidebar] = useState(false); // Toggle for mobile view
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -26,37 +27,52 @@ export default function App() {
   // Load data from local storage or static file on mount
   useEffect(() => {
     const loadInitialData = async () => {
-      // 1. Try to load from local storage first (for active editing)
+      // 1. Fetch static data from locations.json first
+      let staticData: LocationData[] = [];
+      try {
+        const response = await fetch('./locations.json');
+        if (response.ok) {
+          staticData = await response.json();
+        }
+      } catch (error) {
+        console.log("No static locations.json found, starting fresh.");
+      }
+
+      // 2. Load from local storage
+      let localData: LocationData[] = [];
       const savedData = localStorage.getItem('pilgrimage_locations');
-      if (savedData) {
+      if (savedData && isEditModeEnabled) {
         try {
           const parsed = JSON.parse(savedData);
-          if (parsed && parsed.length > 0) {
-            setLocations(parsed);
-            return;
+          if (parsed && Array.isArray(parsed)) {
+            localData = parsed;
           }
         } catch (e) {
           console.error("Failed to parse saved locations");
         }
       }
 
-      // 2. If no local data, try to fetch from a static file (for GitHub Pages deployment)
-      try {
-        const response = await fetch('./locations.json');
-        if (response.ok) {
-          const staticData = await response.json();
+      // 3. Make data loading decision based on mode
+      if (!isEditModeEnabled) {
+        // Guests only see static data. Ignore localStorage.
+        setLocations(staticData);
+      } else {
+        // Editors get localData if it exists, otherwise fallback to staticData
+        if (localData.length > 0) {
+          setLocations(localData);
+        } else {
           setLocations(staticData);
         }
-      } catch (error) {
-        console.log("No static locations.json found, starting fresh.");
       }
     };
 
     loadInitialData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Save data to local storage whenever it changes
+  // Save data to local storage whenever it changes (only in Edit Mode)
   useEffect(() => {
+    if (!isEditModeEnabled) return;
     try {
       localStorage.setItem('pilgrimage_locations', JSON.stringify(locations));
     } catch (error: any) {
@@ -65,7 +81,7 @@ export default function App() {
         setToast({ message: '本地存储空间已满！请导出数据后清理，或减少图片数量。', type: 'error' });
       }
     }
-  }, [locations]);
+  }, [locations, isEditModeEnabled]);
 
   const processFiles = async (files: File[]) => {
     setIsProcessing(true);
@@ -184,7 +200,7 @@ export default function App() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const filesArray = Array.from(e.target.files);
+      const filesArray = Array.from(e.target.files) as File[];
       processFiles(filesArray);
     }
     e.target.value = '';
@@ -268,16 +284,18 @@ export default function App() {
       `}>
         {/* Brand & Stats */}
         <div className="p-[40px_40px_20px_40px] flex flex-col shrink-0 relative">
-          <div className="absolute top-4 right-4">
-            <button 
-              onClick={() => setIsViewMode(!isViewMode)} 
-              className={`text-[10px] uppercase tracking-wider flex items-center gap-1 px-2 py-1 rounded transition-colors ${isViewMode ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              title={isViewMode ? "Switch to Edit Mode" : "Preview Public View"}
-            >
-              {isViewMode ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-              {isViewMode ? 'Public View' : 'Edit Mode'}
-            </button>
-          </div>
+          {isEditModeEnabled && (
+            <div className="absolute top-4 right-4">
+              <button 
+                onClick={() => setIsViewMode(!isViewMode)} 
+                className={`text-[10px] uppercase tracking-wider flex items-center gap-1 px-2 py-1 rounded transition-colors ${isViewMode ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                title={isViewMode ? "Switch to Edit Mode" : "Preview Public View"}
+              >
+                {isViewMode ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                {isViewMode ? 'Public View' : 'Edit Mode'}
+              </button>
+            </div>
+          )}
 
           <div className="mb-[40px] mt-4">
             <h1 className="font-display text-[42px] leading-[0.9] font-normal mb-5">Anime<br/>Pilgrimage</h1>
