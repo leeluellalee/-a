@@ -35,7 +35,8 @@ export default function App() {
       // That way, if you upload a new locations.json, it will reflect immediately for visitors.
       let hasStaticData = false;
       try {
-        const response = await fetch('/locations.json?t=' + new Date().getTime()); // cache bust
+        const baseUrl = import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : import.meta.env.BASE_URL + '/';
+        const response = await fetch(baseUrl + 'locations.json?t=' + new Date().getTime()); // cache bust
         if (response.ok) {
           const text = await response.text();
           // Make sure it's not the Vite SPA fallback HTML
