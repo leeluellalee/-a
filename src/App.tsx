@@ -13,6 +13,7 @@ export default function App() {
   const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(null);
   const [editingLocation, setEditingLocation] = useState<LocationData | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Loading state for initial data fetch
   const [toast, setToast] = useState<{message: string, type: 'error' | 'success' | 'warning'} | null>(null);
   const [isViewMode, setIsViewMode] = useState(true); // Toggle for public view simulation
   const [showMobileSidebar, setShowMobileSidebar] = useState(false); // Toggle for mobile view
@@ -31,53 +32,57 @@ export default function App() {
   // Load data from local storage or static file on mount
   useEffect(() => {
     const loadInitialData = async () => {
-      // For the public viewer, we want to try loading the static locations.json FIRST.
-      // That way, if you upload a new locations.json, it will reflect immediately for visitors.
-      let hasStaticData = false;
       try {
-        const baseUrl = import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : import.meta.env.BASE_URL + '/';
-        const response = await fetch(baseUrl + 'locations.json?t=' + new Date().getTime()); // cache bust
-        if (response.ok) {
-          const text = await response.text();
-          // Make sure it's not the Vite SPA fallback HTML
-          if (!text.trim().startsWith('<')) {
-            const staticData = JSON.parse(text);
-            if (staticData && staticData.length > 0) {
-              setLocations(staticData);
-              hasStaticData = true;
+        // For the public viewer, we want to try loading the static locations.json FIRST.
+        // That way, if you upload a new locations.json, it will reflect immediately for visitors.
+        let hasStaticData = false;
+        try {
+          const baseUrl = import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : import.meta.env.BASE_URL + '/';
+          const response = await fetch(baseUrl + 'locations.json?t=' + new Date().getTime()); // cache bust
+          if (response.ok) {
+            const text = await response.text();
+            // Make sure it's not the Vite SPA fallback HTML
+            if (!text.trim().startsWith('<')) {
+              const staticData = JSON.parse(text);
+              if (staticData && staticData.length > 0) {
+                setLocations(staticData);
+                hasStaticData = true;
+              }
             }
           }
+        } catch (error) {
+          console.log("No static locations.json found or fetch failed.");
         }
-      } catch (error) {
-        console.log("No static locations.json found or fetch failed.");
-      }
 
-      if (hasStaticData) return;
+        if (hasStaticData) return;
 
-      // Fallbacks if locations.json is missing:
-      // 1. Try to load from IndexedDB first (for active editing, much higher limits than localStorage)
-      try {
-        const savedData = await get<LocationData[]>('pilgrimage_locations');
-        if (savedData && savedData.length > 0) {
-          setLocations(savedData);
-          return;
-        }
-      } catch (e) {
-        console.error("Failed to parse saved locations from IndexedDB", e);
-      }
-
-      // 2. Fallback to older localStorage if they just updated
-      const oldSavedData = localStorage.getItem('pilgrimage_locations');
-      if (oldSavedData) {
+        // Fallbacks if locations.json is missing:
+        // 1. Try to load from IndexedDB first (for active editing, much higher limits than localStorage)
         try {
-          const parsed = JSON.parse(oldSavedData);
-          if (parsed && parsed.length > 0) {
-            setLocations(parsed);
+          const savedData = await get<LocationData[]>('pilgrimage_locations');
+          if (savedData && savedData.length > 0) {
+            setLocations(savedData);
             return;
           }
         } catch (e) {
-          console.error("Failed to parse old localStorage");
+          console.error("Failed to parse saved locations from IndexedDB", e);
         }
+
+        // 2. Fallback to older localStorage if they just updated
+        const oldSavedData = localStorage.getItem('pilgrimage_locations');
+        if (oldSavedData) {
+          try {
+            const parsed = JSON.parse(oldSavedData);
+            if (parsed && parsed.length > 0) {
+              setLocations(parsed);
+              return;
+            }
+          } catch (e) {
+            console.error("Failed to parse old localStorage");
+          }
+        }
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -316,22 +321,22 @@ export default function App() {
         {/* Brand & Stats */}
         <div className="p-[40px_40px_20px_40px] flex flex-col shrink-0 relative">
           <div className="absolute top-4 right-4 flex items-center gap-2">
-            <div className="relative group">
+            <div className="relative">
               <button className="text-[10px] uppercase tracking-wider flex items-center gap-1 px-2 py-1 rounded transition-colors bg-blue-50 text-blue-700 hover:bg-blue-100">
                 <Globe className="w-3 h-3" />
                 {language.toUpperCase()}
               </button>
-              <div className="absolute top-full right-0 mt-1 mb-2 bg-white shadow-lg border border-gray-100 rounded overflow-hidden hidden group-hover:block z-50 min-w-[80px]">
-                {(['zh', 'en', 'ja', 'ko'] as Language[]).map(lang => (
-                  <button 
-                    key={lang} 
-                    onClick={() => setLanguage(lang)}
-                    className={`block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 ${language === lang ? 'font-bold bg-gray-50' : ''}`}
-                  >
-                    {lang === 'zh' ? '中文' : lang === 'en' ? 'ENG' : lang === 'ja' ? '日本語' : '한국어'}
-                  </button>
-                ))}
-              </div>
+              <select 
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as Language)}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                aria-label="Select Language"
+              >
+                <option value="zh">中文</option>
+                <option value="en">ENG</option>
+                <option value="ja">日本語</option>
+                <option value="ko">한국어</option>
+              </select>
             </div>
           </div>
 
@@ -440,7 +445,12 @@ export default function App() {
       <main className="flex-1 relative bg-[#EBE7E0] flex items-center justify-center">
         <div className="absolute inset-0 opacity-20 pointer-events-none z-[400]" style={{ backgroundImage: 'radial-gradient(var(--color-accent) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
         
-        {locations.length > 0 ? (
+        {isLoading ? (
+          <div className="text-center text-[var(--color-ink)] opacity-50 z-10 flex flex-col items-center">
+            <Loader2 className="w-8 h-8 animate-spin mb-4" />
+            <p className="font-display italic">Loading locations...</p>
+          </div>
+        ) : locations.length > 0 ? (
           <PhotoMap
             locations={locations}
             selectedLocation={selectedLocation}
