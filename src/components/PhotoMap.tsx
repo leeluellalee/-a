@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { LocationData } from '../types';
+import { translations, Language } from '../translations';
 import { Navigation, LocateFixed } from 'lucide-react';
 
 // Fix Leaflet's default icon path issues in Vite/React
@@ -114,9 +115,11 @@ interface PhotoMapProps {
   selectedLocation: LocationData | null;
   onSelectLocation: (loc: LocationData) => void;
   showToast: (msg: string, type: 'error' | 'success' | 'warning') => void;
+  language: Language;
 }
 
-export default function PhotoMap({ locations, selectedLocation, onSelectLocation, showToast }: PhotoMapProps) {
+export default function PhotoMap({ locations, selectedLocation, onSelectLocation, showToast, language }: PhotoMapProps) {
+  const t = translations[language];
   const centerLoc = locations[0];
   const defaultCenter: [number, number] = centerLoc 
     ? [centerLoc.lat, centerLoc.lng] 
@@ -166,7 +169,7 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
                 
                 <div className="flex flex-col gap-3 mb-3">
                   <div>
-                    <div className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">Real Life</div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">{t.realLife}</div>
                     <img 
                       src={loc.realPhotoUrl} 
                       alt="Real" 
@@ -175,7 +178,7 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
                   </div>
                   {loc.refPhotoUrl && (
                     <div>
-                      <div className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">Anime Reference</div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">{t.animeRef}</div>
                       <img 
                         src={loc.refPhotoUrl} 
                         alt="Reference" 
@@ -190,10 +193,6 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
                     {loc.description}
                   </p>
                 )}
-                
-                <div className="text-[10px] text-gray-500 italic mb-3">
-                  {loc.copyright}
-                </div>
 
                 <a 
                   href={`https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`}
@@ -202,7 +201,7 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
                   className="flex items-center justify-center gap-2 w-full py-2 bg-[var(--color-ink)] text-white text-[12px] tracking-wider uppercase hover:bg-black transition-colors"
                 >
                   <Navigation className="w-3 h-3" />
-                  Navigate Here
+                  {t.navigate}
                 </a>
               </div>
             </Popup>

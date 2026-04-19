@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { LocationData } from '../types';
+import { translations, Language } from '../translations';
 import { X, Trash2, AlertTriangle } from 'lucide-react';
 import heic2any from 'heic2any';
 
@@ -8,12 +9,13 @@ interface EditLocationModalProps {
   onClose: () => void;
   onSave: (location: LocationData) => void;
   onDelete: (id: string) => void;
+  language: Language;
 }
 
-export default function EditLocationModal({ location, onClose, onSave, onDelete }: EditLocationModalProps) {
+export default function EditLocationModal({ location, onClose, onSave, onDelete, language }: EditLocationModalProps) {
+  const t = translations[language];
   const [title, setTitle] = useState(location.title || '');
   const [description, setDescription] = useState(location.description || '');
-  const [copyright, setCopyright] = useState(location.copyright);
   const [refFile, setRefFile] = useState<File | null>(null);
   const [refPreview, setRefPreview] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -88,7 +90,6 @@ export default function EditLocationModal({ location, onClose, onSave, onDelete 
       ...location,
       title,
       description,
-      copyright,
       refPhotoUrl
     });
     setIsSaving(false);
@@ -134,17 +135,7 @@ export default function EditLocationModal({ location, onClose, onSave, onDelete 
           </div>
 
           <div>
-            <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1">Copyright</label>
-            <input
-              type="text"
-              value={copyright}
-              onChange={(e) => setCopyright(e.target.value)}
-              className="w-full border border-gray-300 rounded p-2 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1">Reference Photo (Anime Screenshot)</label>
+            <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1">{t.animeRef}</label>
             <input
               type="file"
               accept="image/*"

@@ -1,20 +1,24 @@
 import React, { useState, useRef, useEffect } from 'react';
 import exifr from 'exifr';
 import heic2any from 'heic2any';
-import { Loader2, Edit3, Download, Upload as UploadIcon, Eye, EyeOff, Map as MapIcon, Menu } from 'lucide-react';
+import { get, set } from 'idb-keyval';
+import { Loader2, Edit3, Download, Upload as UploadIcon, Eye, EyeOff, Map as MapIcon, Menu, Globe } from 'lucide-react';
 import PhotoMap from './components/PhotoMap';
 import EditLocationModal from './components/EditLocationModal';
 import { LocationData } from './types';
+import { translations, Language } from './translations';
 
 export default function App() {
-  const isEditModeEnabled = typeof window !== 'undefined' && window.location.search.includes('edit=1');
   const [locations, setLocations] = useState<LocationData[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(null);
   const [editingLocation, setEditingLocation] = useState<LocationData | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'error' | 'success' | 'warning'} | null>(null);
-  const [isViewMode, setIsViewMode] = useState(!isEditModeEnabled); // Defaults to true unless ?edit=1 is present
+  const [isViewMode, setIsViewMode] = useState(true); // Toggle for public view simulation
   const [showMobileSidebar, setShowMobileSidebar] = useState(false); // Toggle for mobile view
+  const [language, setLanguage] = useState<Language>('zh');
+
+  const t = translations[language];
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -27,61 +31,70 @@ export default function App() {
   // Load data from local storage or static file on mount
   useEffect(() => {
     const loadInitialData = async () => {
-      // 1. Fetch static data from locations.json first
-      let staticData: LocationData[] = [];
+      // For the public viewer, we want to try loading the static locations.json FIRST.
+      // That way, if you upload a new locations.json, it will reflect immediately for visitors.
+      let hasStaticData = false;
       try {
-        const response = await fetch('./locations.json');
+        const response = await fetch('/locations.json?t=' + new Date().getTime()); // cache bust
         if (response.ok) {
-          staticData = await response.json();
+          const text = await response.text();
+          // Make sure it's not the Vite SPA fallback HTML
+          if (!text.trim().startsWith('<')) {
+            const staticData = JSON.parse(text);
+            if (staticData && staticData.length > 0) {
+              setLocations(staticData);
+              hasStaticData = true;
+            }
+          }
         }
       } catch (error) {
-        console.log("No static locations.json found, starting fresh.");
+        console.log("No static locations.json found or fetch failed.");
       }
 
-      // 2. Load from local storage
-      let localData: LocationData[] = [];
-      const savedData = localStorage.getItem('pilgrimage_locations');
-      if (savedData && isEditModeEnabled) {
+      if (hasStaticData) return;
+
+      // Fallbacks if locations.json is missing:
+      // 1. Try to load from IndexedDB first (for active editing, much higher limits than localStorage)
+      try {
+        const savedData = await get<LocationData[]>('pilgrimage_locations');
+        if (savedData && savedData.length > 0) {
+          setLocations(savedData);
+          return;
+        }
+      } catch (e) {
+        console.error("Failed to parse saved locations from IndexedDB", e);
+      }
+
+      // 2. Fallback to older localStorage if they just updated
+      const oldSavedData = localStorage.getItem('pilgrimage_locations');
+      if (oldSavedData) {
         try {
-          const parsed = JSON.parse(savedData);
-          if (parsed && Array.isArray(parsed)) {
-            localData = parsed;
+          const parsed = JSON.parse(oldSavedData);
+          if (parsed && parsed.length > 0) {
+            setLocations(parsed);
+            return;
           }
         } catch (e) {
-          console.error("Failed to parse saved locations");
-        }
-      }
-
-      // 3. Make data loading decision based on mode
-      if (!isEditModeEnabled) {
-        // Guests only see static data. Ignore localStorage.
-        setLocations(staticData);
-      } else {
-        // Editors get localData if it exists, otherwise fallback to staticData
-        if (localData.length > 0) {
-          setLocations(localData);
-        } else {
-          setLocations(staticData);
+          console.error("Failed to parse old localStorage");
         }
       }
     };
 
     loadInitialData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Save data to local storage whenever it changes (only in Edit Mode)
+  // Save data to IndexedDB whenever it changes
   useEffect(() => {
-    if (!isEditModeEnabled) return;
-    try {
-      localStorage.setItem('pilgrimage_locations', JSON.stringify(locations));
-    } catch (error: any) {
-      console.error("Failed to save to localStorage:", error);
-      if (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
-        setToast({ message: '本地存储空间已满！请导出数据后清理，或减少图片数量。', type: 'error' });
+    if (locations.length === 0) return; // Prevent overwriting with empty array on pure mount
+    const saveData = async () => {
+      try {
+        await set('pilgrimage_locations', locations);
+      } catch (error: any) {
+        console.error("Failed to save to IndexedDB:", error);
       }
-    }
-  }, [locations, isEditModeEnabled]);
+    };
+    saveData();
+  }, [locations]);
 
   const processFiles = async (files: File[]) => {
     setIsProcessing(true);
@@ -150,7 +163,24 @@ export default function App() {
               canvas.width = width;
               canvas.height = height;
               const ctx = canvas.getContext('2d');
-              ctx?.drawImage(img, 0, 0, width, height);
+              
+              if (ctx) {
+                ctx.drawImage(img, 0, 0, width, height);
+                // Add watermark
+                const fontSize = Math.max(16, Math.round(width * 0.03));
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'bottom';
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+                ctx.shadowBlur = 4;
+                ctx.shadowOffsetX = 1;
+                ctx.shadowOffsetY = 1;
+                
+                const padding = Math.max(10, Math.round(width * 0.02));
+                ctx.fillText('羊卡普汀', width - padding, height - padding);
+              }
+
               // Compress to JPEG with 80% quality
               resolve(canvas.toDataURL('image/jpeg', 0.8));
             };
@@ -284,30 +314,40 @@ export default function App() {
       `}>
         {/* Brand & Stats */}
         <div className="p-[40px_40px_20px_40px] flex flex-col shrink-0 relative">
-          {isEditModeEnabled && (
-            <div className="absolute top-4 right-4">
-              <button 
-                onClick={() => setIsViewMode(!isViewMode)} 
-                className={`text-[10px] uppercase tracking-wider flex items-center gap-1 px-2 py-1 rounded transition-colors ${isViewMode ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                title={isViewMode ? "Switch to Edit Mode" : "Preview Public View"}
-              >
-                {isViewMode ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                {isViewMode ? 'Public View' : 'Edit Mode'}
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            <div className="relative group">
+              <button className="text-[10px] uppercase tracking-wider flex items-center gap-1 px-2 py-1 rounded transition-colors bg-blue-50 text-blue-700 hover:bg-blue-100">
+                <Globe className="w-3 h-3" />
+                {language.toUpperCase()}
               </button>
+              <div className="absolute top-full right-0 mt-1 mb-2 bg-white shadow-lg border border-gray-100 rounded overflow-hidden hidden group-hover:block z-50 min-w-[80px]">
+                {(['zh', 'en', 'ja', 'ko'] as Language[]).map(lang => (
+                  <button 
+                    key={lang} 
+                    onClick={() => setLanguage(lang)}
+                    className={`block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 ${language === lang ? 'font-bold bg-gray-50' : ''}`}
+                  >
+                    {lang === 'zh' ? '中文' : lang === 'en' ? 'ENG' : lang === 'ja' ? '日本語' : '한국어'}
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
+          </div>
 
           <div className="mb-[40px] mt-4">
-            <h1 className="font-display text-[42px] leading-[0.9] font-normal mb-5">Anime<br/>Pilgrimage</h1>
+            <h1 
+              className="font-display text-[32px] sm:text-[42px] leading-[1.1] sm:leading-[0.9] font-normal mb-5"
+              dangerouslySetInnerHTML={{ __html: t.title }}
+            />
             <p className="italic font-display text-[14px] text-[var(--color-accent)] tracking-[1px]">
-              {isViewMode ? "EXPLORE THE LOCATIONS" : "LOCAL MAP BUILDER"}
+              {t.subtitle}
             </p>
           </div>
 
           <div className="flex flex-col gap-4">
             <div>
-              <div className="text-[10px] uppercase tracking-[2px] opacity-50 mb-1">Locations Explored</div>
-              <div className="font-display text-[24px]">{locations.length} Spots</div>
+              <div className="text-[10px] uppercase tracking-[2px] opacity-50 mb-1">{t.listTitle}</div>
+              <div className="font-display text-[24px]">{locations.length} {t.spotsCount}</div>
             </div>
           </div>
         </div>
@@ -372,7 +412,7 @@ export default function App() {
                   className="text-[13px] tracking-[1px] uppercase cursor-pointer hover:underline underline-offset-8 flex items-center gap-2"
                 >
                   {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  Upload New Locations
+                  {t.uploadPhotos}
                 </label>
               </li>
               <li className="h-px bg-black/10 my-2"></li>
@@ -380,14 +420,14 @@ export default function App() {
                 onClick={exportData}
                 className="text-[11px] tracking-[1px] uppercase cursor-pointer hover:underline underline-offset-8 flex items-center gap-2 text-gray-500"
               >
-                <Download className="w-3 h-3" /> Export Map Data
+                <Download className="w-3 h-3" /> {t.exportData}
               </li>
               <li>
                 <label 
                   htmlFor="import-data-input"
                   className="text-[11px] tracking-[1px] uppercase cursor-pointer hover:underline underline-offset-8 flex items-center gap-2 text-gray-500"
                 >
-                  <UploadIcon className="w-3 h-3" /> Import Map Data
+                  <UploadIcon className="w-3 h-3" /> {t.importData}
                 </label>
               </li>
             </ul>
@@ -405,6 +445,7 @@ export default function App() {
             selectedLocation={selectedLocation}
             onSelectLocation={setSelectedLocation}
             showToast={showToast}
+            language={language}
           />
         ) : (
           <div className="text-center text-[var(--color-ink)] opacity-50 z-10">
@@ -420,6 +461,7 @@ export default function App() {
           onClose={() => setEditingLocation(null)}
           onSave={handleSaveLocation}
           onDelete={handleDeleteLocation}
+          language={language}
         />
       )}
 
