@@ -6,9 +6,11 @@ export interface LocationData {
   lng: number;
   realPhotoUrl: string;
   refPhotoUrl?: string;
+  showRefOnMap?: boolean;
   copyright: string;
   createdAt: number;
   authorUid: string;
+  visited?: boolean;
 }
 
 export enum OperationType {

@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import { LocationData } from '../types';
 import { translations, Language } from '../translations';
 import { Navigation, LocateFixed } from 'lucide-react';
+import { TranslatedText } from './TranslatedText';
 
 // Fix Leaflet's default icon path issues in Vite/React
 // @ts-ignore
@@ -26,7 +27,7 @@ function MapUpdater({ selectedLocation }: { selectedLocation: LocationData | nul
   
   useEffect(() => {
     if (selectedLocation?.lat && selectedLocation?.lng) {
-      map.flyTo([selectedLocation.lat, selectedLocation.lng], 15, {
+      map.flyTo([selectedLocation.lat, selectedLocation.lng], 18, {
         animate: true,
         duration: 1.5
       });
@@ -36,8 +37,9 @@ function MapUpdater({ selectedLocation }: { selectedLocation: LocationData | nul
   return null;
 }
 
-function CustomControls({ showToast }: { showToast: (msg: string, type: 'error' | 'success' | 'warning') => void }) {
+function CustomControls({ showToast, language }: { showToast: (msg: string, type: 'error' | 'success' | 'warning') => void, language: Language }) {
   const map = useMap();
+  const t = translations[language];
   const [position, setPosition] = useState<[number, number] | null>(null);
   const [isLocating, setIsLocating] = useState(false);
 
@@ -66,7 +68,7 @@ function CustomControls({ showToast }: { showToast: (msg: string, type: 'error' 
         setPosition([e.latlng.lat, e.latlng.lng]);
         setIsLocating(false);
       }).on("locationerror", function (e) {
-        showToast("无法获取位置。请在系统和浏览器设置中，允许本网站访问您的地理位置。", "error");
+        showToast(t.locationError, "error");
         setIsLocating(false);
       });
     }
@@ -99,7 +101,7 @@ function CustomControls({ showToast }: { showToast: (msg: string, type: 'error' 
               handleLocate();
             }}
             className="flex items-center justify-center w-[34px] h-[34px] bg-white hover:bg-gray-100 text-black transition-colors rounded"
-            title="定位到我的位置"
+            title={t.locateMe}
             style={{ borderRadius: '4px' }}
           >
             <LocateFixed size={20} className={isLocating ? 'animate-pulse text-blue-500' : 'text-gray-700'} />
@@ -116,9 +118,10 @@ interface PhotoMapProps {
   onSelectLocation: (loc: LocationData) => void;
   showToast: (msg: string, type: 'error' | 'success' | 'warning') => void;
   language: Language;
+  onToggleVisited: (id: string, visited: boolean) => void;
 }
 
-export default function PhotoMap({ locations, selectedLocation, onSelectLocation, showToast, language }: PhotoMapProps) {
+export default function PhotoMap({ locations, selectedLocation, onSelectLocation, showToast, language, onToggleVisited }: PhotoMapProps) {
   const t = translations[language];
   const centerLoc = locations[0];
   const defaultCenter: [number, number] = centerLoc 
@@ -133,25 +136,31 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
       zoom={defaultZoom} 
       className="w-full h-full z-0"
       zoomControl={true}
+      maxZoom={19}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        maxZoom={19}
       />
       <MapUpdater selectedLocation={selectedLocation} />
-      <CustomControls showToast={showToast} />
+      <CustomControls showToast={showToast} language={language} />
       
       {locations.map(loc => {
+        const pinImageUrl = loc.showRefOnMap && loc.refPhotoUrl ? loc.refPhotoUrl : loc.realPhotoUrl;
         const customIcon = L.divIcon({
           className: 'custom-photo-marker',
           html: `
-            <div class="photo-marker-inner">
-              <img src="${loc.realPhotoUrl}" alt="${loc.title}" />
+            <div class="photo-marker-inner ${loc.visited ? 'visited' : ''}">
+              ${pinImageUrl && pinImageUrl !== ""
+                ? `<img src="${pinImageUrl}" alt="${loc.title}" />`
+                : `<div class="empty-photo-marker"><span class="text-[10px] text-center">${t.noPhoto}</span></div>`
+              }
             </div>
           `,
-          iconSize: [60, 75],
-          iconAnchor: [30, 75],
-          popupAnchor: [0, -75]
+          iconSize: [80, 80], // Square better accommodates horizontal photos
+          iconAnchor: [40, 80],
+          popupAnchor: [0, -80]
         });
 
         return (
@@ -165,18 +174,29 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
           >
             <Popup className="custom-popup">
               <div>
-                <h2 className="font-display font-normal text-[18px] mb-2 truncate">{loc.title}</h2>
+                <h2 className="font-display font-normal text-[18px] mb-2 truncate">
+                  <TranslatedText text={loc.title} targetLang={language} />
+                </h2>
                 
                 <div className="flex flex-col gap-3 mb-3">
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">{t.realLife}</div>
-                    <img 
-                      src={loc.realPhotoUrl} 
-                      alt="Real" 
-                      className="w-full h-auto max-h-48 object-contain bg-[#eee] rounded" 
-                    />
-                  </div>
-                  {loc.refPhotoUrl && (
+                  {loc.realPhotoUrl && loc.realPhotoUrl !== "" ? (
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">{t.realLife}</div>
+                      <img 
+                        src={loc.realPhotoUrl} 
+                        alt="Real" 
+                        className="w-full h-auto max-h-48 object-contain bg-[#eee] rounded" 
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">{t.realLife}</div>
+                      <div className="w-full aspect-video bg-[#eee] rounded flex items-center justify-center text-gray-400 font-display text-sm tracking-wider">
+                        {t.noRealPhotoDesc}
+                      </div>
+                    </div>
+                  )}
+                  {loc.refPhotoUrl && loc.refPhotoUrl !== "" ? (
                     <div>
                       <div className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">{t.animeRef}</div>
                       <img 
@@ -185,24 +205,32 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
                         className="w-full h-auto max-h-48 object-contain bg-[#eee] rounded" 
                       />
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 {loc.description && (
                   <p className="text-[12px] leading-[1.6] text-[#666] mb-2 max-h-24 overflow-y-auto">
-                    {loc.description}
+                    <TranslatedText text={loc.description} targetLang={language} />
                   </p>
                 )}
 
-                <a 
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full py-2 bg-[var(--color-ink)] text-white text-[12px] tracking-wider uppercase hover:bg-black transition-colors"
-                >
-                  <Navigation className="w-3 h-3" />
-                  {t.navigate}
-                </a>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => onToggleVisited(loc.id, !loc.visited)}
+                    className={`flex-1 py-2 text-[12px] tracking-wider uppercase transition-colors border ${loc.visited ? 'bg-[#3b82f6] border-[#3b82f6] text-white' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    {loc.visited ? '✔️ ' + t.markVisited : t.markUnvisited}
+                  </button>
+                  <a 
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 flex items-center justify-center gap-2 py-2 bg-[var(--color-ink)] text-white text-[12px] tracking-wider uppercase hover:bg-black transition-colors"
+                  >
+                    <Navigation className="w-3 h-3" />
+                    {t.navigate}
+                  </a>
+                </div>
               </div>
             </Popup>
           </Marker>

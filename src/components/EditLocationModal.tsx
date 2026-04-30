@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { LocationData } from '../types';
 import { translations, Language } from '../translations';
-import { X, Trash2, AlertTriangle } from 'lucide-react';
+import { X, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
 import heic2any from 'heic2any';
 
 interface EditLocationModalProps {
@@ -16,8 +16,11 @@ export default function EditLocationModal({ location, onClose, onSave, onDelete,
   const t = translations[language];
   const [title, setTitle] = useState(location.title || '');
   const [description, setDescription] = useState(location.description || '');
+  const [lat, setLat] = useState(location.lat.toString());
+  const [lng, setLng] = useState(location.lng.toString());
   const [refFile, setRefFile] = useState<File | null>(null);
   const [refPreview, setRefPreview] = useState<string | null>(null);
+  const [showRefOnMap, setShowRefOnMap] = useState<boolean>(location.showRefOnMap || false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -90,7 +93,10 @@ export default function EditLocationModal({ location, onClose, onSave, onDelete,
       ...location,
       title,
       description,
-      refPhotoUrl
+      lat: parseFloat(lat) || location.lat,
+      lng: parseFloat(lng) || location.lng,
+      refPhotoUrl,
+      showRefOnMap
     });
     setIsSaving(false);
   };
@@ -110,28 +116,51 @@ export default function EditLocationModal({ location, onClose, onSave, onDelete,
           <X className="w-5 h-5" />
         </button>
         
-        <h2 className="text-xl font-display mb-4">Edit Location</h2>
+        <h2 className="text-xl font-display mb-4">{t.editLocation}</h2>
         
         <div className="space-y-4">
           <div>
-            <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1">Location Name</label>
+            <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1">{t.locationName}</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full border border-gray-300 rounded p-2 text-sm"
-              placeholder="Enter location name..."
+              placeholder={t.locationNamePlaceholder}
             />
           </div>
 
           <div>
-            <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1">Description</label>
+            <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1">{t.description}</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full border border-gray-300 rounded p-2 text-sm h-24"
-              placeholder="Describe this location..."
+              placeholder={t.descriptionPlaceholder}
             />
+          </div>
+
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1">{t.latitude}</label>
+              <input
+                type="number"
+                step="any"
+                value={lat}
+                onChange={(e) => setLat(e.target.value)}
+                className="w-full border border-gray-300 rounded p-2 text-sm"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1">{t.longitude}</label>
+              <input
+                type="number"
+                step="any"
+                value={lng}
+                onChange={(e) => setLng(e.target.value)}
+                className="w-full border border-gray-300 rounded p-2 text-sm"
+              />
+            </div>
           </div>
 
           <div>
@@ -143,10 +172,10 @@ export default function EditLocationModal({ location, onClose, onSave, onDelete,
               className="w-full text-sm mb-2"
             />
             
-            {(refPreview || location.refPhotoUrl) && (
+            {(refPreview || location.refPhotoUrl) && (refPreview || location.refPhotoUrl) !== "" ? (
               <div className="relative inline-block">
                 <img 
-                  src={refPreview || location.refPhotoUrl} 
+                  src={(refPreview || location.refPhotoUrl) as string} 
                   alt="Reference preview" 
                   className="h-24 object-cover rounded border border-gray-200" 
                 />
@@ -156,7 +185,20 @@ export default function EditLocationModal({ location, onClose, onSave, onDelete,
                   </span>
                 )}
               </div>
-            )}
+            ) : null}
+
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="showRefOnMap"
+                checked={showRefOnMap}
+                onChange={(e) => setShowRefOnMap(e.target.checked)}
+                className="rounded border-gray-300 w-4 h-4"
+              />
+              <label htmlFor="showRefOnMap" className="text-sm text-gray-700 cursor-pointer">
+                {t.showRefOnMap}
+              </label>
+            </div>
           </div>
         </div>
 
@@ -167,7 +209,7 @@ export default function EditLocationModal({ location, onClose, onSave, onDelete,
               className="flex items-center gap-1 text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-medium transition-colors"
             >
               <AlertTriangle className="w-4 h-4" />
-              Confirm Delete
+              {t.confirmDelete}
             </button>
           ) : (
             <button
@@ -175,7 +217,7 @@ export default function EditLocationModal({ location, onClose, onSave, onDelete,
               className="flex items-center gap-2 text-red-500 hover:text-red-700 text-sm transition-colors"
             >
               <Trash2 className="w-4 h-4" />
-              Delete
+              {t.delete}
             </button>
           )}
           
@@ -184,14 +226,15 @@ export default function EditLocationModal({ location, onClose, onSave, onDelete,
               onClick={onClose}
               className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded transition-colors"
             >
-              Cancel
+              {t.cancel}
             </button>
             <button
               onClick={handleSave}
               disabled={isSaving}
               className="flex items-center gap-2 px-4 py-2 bg-[var(--color-ink)] text-white rounded text-sm hover:bg-black transition-colors disabled:opacity-50"
             >
-              {isSaving ? 'Saving...' : 'Save Changes'}
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {t.save}
             </button>
           </div>
         </div>

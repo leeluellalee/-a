@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import exifr from 'exifr';
 import heic2any from 'heic2any';
 import { get, set } from 'idb-keyval';
 import { Loader2, Edit3, Download, Upload as UploadIcon, Eye, EyeOff, Map as MapIcon, Menu, Globe } from 'lucide-react';
 import PhotoMap from './components/PhotoMap';
 import EditLocationModal from './components/EditLocationModal';
+import { TranslatedText } from './components/TranslatedText';
 import { LocationData } from './types';
 import { translations, Language } from './translations';
 
@@ -15,9 +16,32 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(true); // Loading state for initial data fetch
   const [toast, setToast] = useState<{message: string, type: 'error' | 'success' | 'warning'} | null>(null);
-  const [isViewMode, setIsViewMode] = useState(true); // Toggle for public view simulation
+  const [isViewMode, setIsViewMode] = useState(true); // Default to view mode for publishing
   const [showMobileSidebar, setShowMobileSidebar] = useState(false); // Toggle for mobile view
   const [language, setLanguage] = useState<Language>('zh');
+  const [longPressMenu, setLongPressMenu] = useState<{ loc: LocationData, x: number, y: number } | null>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handlePointerDown = (e: React.PointerEvent, loc: LocationData) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const x = e.clientX;
+    const y = e.clientY;
+    longPressTimerRef.current = setTimeout(() => {
+      setLongPressMenu({ loc, x, y });
+    }, 600);
+  };
+
+  const handlePointerUpOrLeave = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, loc: LocationData) => {
+    e.preventDefault();
+    setLongPressMenu({ loc, x: e.clientX, y: e.clientY });
+  };
 
   const t = translations[language];
   
@@ -29,24 +53,30 @@ export default function App() {
     setTimeout(() => setToast(null), 6000);
   };
 
+  const handleToggleVisited = (id: string, visited: boolean) => {
+    setLocations(prev => {
+      const newLocs = prev.map(loc => loc.id === id ? { ...loc, visited } : loc);
+      return newLocs;
+    });
+    if (selectedLocation?.id === id) {
+      setSelectedLocation(prev => prev ? { ...prev, visited } : prev);
+    }
+  };
+
   // Load data from local storage or static file on mount
   useEffect(() => {
     const loadInitialData = async () => {
       try {
-        // For the public viewer, we want to try loading the static locations.json FIRST.
-        // That way, if you upload a new locations.json, it will reflect immediately for visitors.
-        let hasStaticData = false;
+        let staticData: LocationData[] = [];
         try {
           const baseUrl = import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : import.meta.env.BASE_URL + '/';
           const response = await fetch(baseUrl + 'locations.json?t=' + new Date().getTime()); // cache bust
           if (response.ok) {
             const text = await response.text();
-            // Make sure it's not the Vite SPA fallback HTML
             if (!text.trim().startsWith('<')) {
-              const staticData = JSON.parse(text);
-              if (staticData && staticData.length > 0) {
-                setLocations(staticData);
-                hasStaticData = true;
+              const parsed = JSON.parse(text);
+              if (parsed && parsed.length > 0) {
+                staticData = parsed;
               }
             }
           }
@@ -54,32 +84,38 @@ export default function App() {
           console.log("No static locations.json found or fetch failed.");
         }
 
-        if (hasStaticData) return;
-
-        // Fallbacks if locations.json is missing:
-        // 1. Try to load from IndexedDB first (for active editing, much higher limits than localStorage)
+        let idbData: LocationData[] = [];
         try {
           const savedData = await get<LocationData[]>('pilgrimage_locations');
           if (savedData && savedData.length > 0) {
-            setLocations(savedData);
-            return;
+            idbData = savedData;
           }
         } catch (e) {
           console.error("Failed to parse saved locations from IndexedDB", e);
         }
 
-        // 2. Fallback to older localStorage if they just updated
+        let oldLData: LocationData[] = [];
         const oldSavedData = localStorage.getItem('pilgrimage_locations');
         if (oldSavedData) {
           try {
             const parsed = JSON.parse(oldSavedData);
             if (parsed && parsed.length > 0) {
-              setLocations(parsed);
-              return;
+              oldLData = parsed;
             }
           } catch (e) {
             console.error("Failed to parse old localStorage");
           }
+        }
+
+        // Merge them. Priority: IDB > Static > LocalStorage
+        const locMap = new Map<string, LocationData>();
+        oldLData.forEach(loc => locMap.set(loc.id, loc));
+        staticData.forEach(loc => locMap.set(loc.id, loc));
+        idbData.forEach(loc => locMap.set(loc.id, loc));
+
+        const merged = Array.from(locMap.values());
+        if (merged.length > 0) {
+          setLocations(merged.sort((a, b) => b.createdAt - a.createdAt));
         }
       } finally {
         setIsLoading(false);
@@ -105,7 +141,7 @@ export default function App() {
   const processFiles = async (files: File[]) => {
     setIsProcessing(true);
     setToast(null);
-    showToast(`正在读取 ${files.length} 张照片...`, 'warning');
+    showToast(t.toastReading.replace('{count}', files.length.toString()), 'warning');
 
     let successCount = 0;
     let noGpsCount = 0;
@@ -135,7 +171,7 @@ export default function App() {
 
         // Convert HEIC to JPEG because browsers cannot natively render HEIC to canvas
         if (file.name.toLowerCase().endsWith('.heic') || file.type === 'image/heic') {
-          showToast(`正在转换 HEIC 格式: ${file.name}...`, 'warning');
+          showToast(t.toastHeic.replace('{name}', file.name), 'warning');
           try {
             const convertedBlob = await heic2any({
               blob: file,
@@ -226,11 +262,12 @@ export default function App() {
     setIsProcessing(false);
 
     if (successCount > 0) {
-      showToast(`成功上传 ${successCount} 个地点！${noGpsCount > 0 ? `（跳过 ${noGpsCount} 张无GPS照片）` : ''}`, 'success');
+      const skippedStr = noGpsCount > 0 ? t.toastSkipped.replace('{count}', noGpsCount.toString()) : '';
+      showToast(t.toastSuccess.replace('{count}', successCount.toString()).replace('{skipped}', skippedStr), 'success');
     } else if (noGpsCount > 0 && errorCount === 0) {
-      showToast(`未找到位置信息：选中的 ${noGpsCount} 张照片都没有GPS数据。请确保上传的是手机拍摄的原图。`, 'warning');
+      showToast(t.toastNoGps.replace('{count}', noGpsCount.toString()), 'warning');
     } else if (errorCount > 0) {
-      showToast(`读取出错，请重试。`, 'error');
+      showToast(t.toastError, 'error');
     }
   };
 
@@ -242,8 +279,28 @@ export default function App() {
     e.target.value = '';
   };
 
+  const handleAddManualLocation = () => {
+    const newLoc: LocationData = {
+      id: Date.now().toString() + Math.random().toString(36).substring(2, 11),
+      title: t.newLocation,
+      lat: 35.681236, // Default to Tokyo station coordinates as a starting point
+      lng: 139.767125,
+      realPhotoUrl: '',
+      copyright: t.manualEntry,
+      createdAt: Date.now(),
+      authorUid: 'local',
+      visited: false
+    };
+    setEditingLocation(newLoc);
+  };
+
   const handleSaveLocation = (updatedLoc: LocationData) => {
-    setLocations(prev => prev.map(loc => loc.id === updatedLoc.id ? updatedLoc : loc));
+    setLocations(prev => {
+      if (!prev.find(loc => loc.id === updatedLoc.id)) {
+        return [updatedLoc, ...prev];
+      }
+      return prev.map(loc => loc.id === updatedLoc.id ? updatedLoc : loc);
+    });
     if (selectedLocation?.id === updatedLoc.id) {
       setSelectedLocation(updatedLoc);
     }
@@ -279,14 +336,53 @@ export default function App() {
         const importedLocations = JSON.parse(event.target?.result as string);
         if (Array.isArray(importedLocations)) {
           setLocations(importedLocations);
-          showToast('数据导入成功！', 'success');
+          showToast(t.toastImportSuccess, 'success');
         }
       } catch (error) {
-        showToast('导入失败：文件格式不正确', 'error');
+        showToast(t.toastImportError, 'error');
       }
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  const groupedLocations = useMemo(() => {
+    const groups: Record<string, LocationData[]> = {
+      KARUMAI: [],
+      SENDAI: [],
+      TOKYO: [],
+      JAPAN_OTHER: [],
+      OTHER: []
+    };
+    
+    locations.forEach(loc => {
+      const lat = loc.lat;
+      const lng = loc.lng;
+      if (lat >= 40.2 && lat <= 40.45 && lng >= 141.3 && lng <= 141.65) {
+        groups.KARUMAI.push(loc);
+      } else if (lat >= 38.1 && lat <= 38.5 && lng >= 140.4 && lng <= 141.2) {
+        groups.SENDAI.push(loc);
+      } else if (lat >= 35.4 && lat <= 36.0 && lng >= 139.4 && lng <= 140.0) {
+        groups.TOKYO.push(loc);
+      } else if (lat >= 24.0 && lat <= 46.0 && lng >= 122.0 && lng <= 146.0) {
+        groups.JAPAN_OTHER.push(loc);
+      } else {
+        groups.OTHER.push(loc);
+      }
+    });
+    
+    return groups;
+  }, [locations]);
+
+  const getRegionName = (region: string) => {
+    switch(region) {
+      case 'KARUMAI': return t.regionKarumai;
+      case 'SENDAI': return t.regionSendai;
+      case 'TOKYO': return t.regionTokyo;
+      case 'JAPAN_OTHER': return t.regionJapanOther;
+      case 'OTHER': return t.regionOther;
+      default: return region;
+    }
   };
 
   return (
@@ -359,38 +455,68 @@ export default function App() {
         </div>
 
         {/* Gallery */}
-        <div className="flex-1 overflow-y-auto px-[40px] py-[20px]">
-           <div className="grid grid-cols-2 gap-4">
-              {locations.map(loc => (
-                <div
-                  key={loc.id}
-                  className={`relative bg-white p-2 pb-6 shadow-[0_10px_30px_rgba(0,0,0,0.1)] cursor-pointer transition-transform hover:-translate-y-1 ${
-                    selectedLocation?.id === loc.id ? 'ring-1 ring-[var(--color-ink)]' : ''
-                  }`}
-                >
-                  <img
-                    src={loc.realPhotoUrl}
-                    alt={loc.title}
-                    onClick={() => {
-                      setSelectedLocation(loc);
-                      setShowMobileSidebar(false);
-                    }}
-                    className="w-full aspect-square object-cover bg-[#eee]"
-                  />
-                  <div className="absolute bottom-1 left-0 w-full text-center text-[10px] font-display italic truncate px-1">
-                    {loc.title}
-                  </div>
-                  {!isViewMode && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); setEditingLocation(loc); }}
-                      className="absolute top-3 right-3 bg-white/80 backdrop-blur-sm p-1 rounded shadow hover:bg-white"
-                    >
-                      <Edit3 className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              ))}
-           </div>
+        <div className="flex-1 overflow-y-auto px-[40px] py-[20px] flex flex-col gap-8">
+           {['KARUMAI', 'SENDAI', 'TOKYO', 'JAPAN_OTHER', 'OTHER'].map(regionKey => {
+             const regionLocs = groupedLocations[regionKey];
+             if (!regionLocs || regionLocs.length === 0) return null;
+             
+             return (
+               <div key={regionKey} className="flex flex-col gap-4">
+                 <h3 className="font-display text-[18px] border-b border-black/10 pb-2">
+                   {getRegionName(regionKey)} ({regionLocs.length})
+                 </h3>
+                 <div className="grid grid-cols-2 gap-4">
+                   {regionLocs.map(loc => (
+                     <div
+                       key={loc.id}
+                       onContextMenu={(e) => handleContextMenu(e, loc)}
+                       onPointerDown={(e) => handlePointerDown(e, loc)}
+                       onPointerUp={handlePointerUpOrLeave}
+                       onPointerLeave={handlePointerUpOrLeave}
+                       className={`relative p-2 pb-6 shadow-[0_10px_30px_rgba(0,0,0,0.1)] cursor-pointer transition-transform hover:-translate-y-1 ${
+                         loc.visited ? 'bg-[#3b82f6] text-white' : 'bg-white text-[var(--color-ink)]'
+                       } ${selectedLocation?.id === loc.id ? 'ring-2 ring-[var(--color-ink)]' : ''}`}
+                     >
+                       {(loc.realPhotoUrl || loc.refPhotoUrl) && (loc.realPhotoUrl || loc.refPhotoUrl) !== "" ? (
+                         <img
+                           src={loc.realPhotoUrl || loc.refPhotoUrl}
+                           alt={loc.title}
+                           onClick={() => {
+                             setSelectedLocation(loc);
+                             setShowMobileSidebar(false);
+                           }}
+                           className="w-full aspect-square object-cover bg-[#eee]"
+                         />
+                       ) : (
+                         <div 
+                           onClick={() => {
+                             setSelectedLocation(loc);
+                             setShowMobileSidebar(false);
+                           }}
+                           className={`w-full aspect-square flex items-center justify-center font-display text-[12px] opacity-70 ${
+                             loc.visited ? 'bg-[#2563eb] text-white/70' : 'bg-[#eee] text-gray-500'
+                           }`}
+                         >
+                           <span>{t.noPhoto}</span>
+                         </div>
+                       )}
+                       <div className="absolute bottom-1 left-0 w-full text-center text-[10px] font-display italic truncate px-1">
+                         <TranslatedText text={loc.title} targetLang={language} />
+                       </div>
+                       {!isViewMode && (
+                         <button 
+                           onClick={(e) => { e.stopPropagation(); setEditingLocation(loc); }}
+                           className="absolute top-3 right-3 bg-white/80 backdrop-blur-sm p-1 rounded shadow hover:bg-white text-[var(--color-ink)]"
+                         >
+                           <Edit3 className="w-3 h-3" />
+                         </button>
+                       )}
+                     </div>
+                   ))}
+                 </div>
+               </div>
+             );
+           })}
         </div>
 
         {/* Upload Buttons - Hidden in View Mode */}
@@ -418,8 +544,16 @@ export default function App() {
                   className="text-[13px] tracking-[1px] uppercase cursor-pointer hover:underline underline-offset-8 flex items-center gap-2"
                 >
                   {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  {t.uploadPhotos}
+                  <UploadIcon className="w-3 h-3" /> {t.uploadPhotos}
                 </label>
+              </li>
+              <li>
+                <button 
+                  onClick={handleAddManualLocation}
+                  className="text-[13px] tracking-[1px] uppercase cursor-pointer hover:underline underline-offset-8 flex items-center gap-2 text-left"
+                >
+                  <MapIcon className="w-3 h-3" /> {t.addManual}
+                </button>
               </li>
               <li className="h-px bg-black/10 my-2"></li>
               <li 
@@ -448,7 +582,7 @@ export default function App() {
         {isLoading ? (
           <div className="text-center text-[var(--color-ink)] opacity-50 z-10 flex flex-col items-center">
             <Loader2 className="w-8 h-8 animate-spin mb-4" />
-            <p className="font-display italic">Loading locations...</p>
+            <p className="font-display italic">{t.loading}</p>
           </div>
         ) : locations.length > 0 ? (
           <PhotoMap
@@ -457,6 +591,7 @@ export default function App() {
             onSelectLocation={setSelectedLocation}
             showToast={showToast}
             language={language}
+            onToggleVisited={handleToggleVisited}
           />
         ) : (
           <div className="text-center text-[var(--color-ink)] opacity-50 z-10">
@@ -485,6 +620,47 @@ export default function App() {
         }`}>
           {toast.message}
         </div>
+      )}
+
+      {/* Long Press Menu */}
+      {longPressMenu && (
+        <>
+          <div 
+            className="fixed inset-0 z-[4000]" 
+            onClick={() => setLongPressMenu(null)}
+          />
+          <div 
+            className="fixed z-[4001] bg-white rounded-lg shadow-xl border border-gray-100 py-1 min-w-[150px] overflow-hidden animate-in fade-in zoom-in duration-200"
+            style={{
+              left: Math.min(longPressMenu.x, window.innerWidth - 160),
+              top: Math.min(longPressMenu.y, window.innerHeight - 100),
+            }}
+          >
+            <a 
+              href={`https://www.google.com/maps/dir/?api=1&destination=${longPressMenu.loc.lat},${longPressMenu.loc.lng}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setLongPressMenu(null)}
+              className="block w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+            >
+              <MapIcon className="w-4 h-4" />
+              {t.navigate}
+            </a>
+            <div className="h-[1px] bg-gray-100" />
+            <button 
+              onClick={() => {
+                handleToggleVisited(longPressMenu.loc.id, !longPressMenu.loc.visited);
+                setLongPressMenu(null);
+              }}
+              className={`block w-full text-left px-4 py-3 text-sm flex items-center gap-2 ${
+                longPressMenu.loc.visited ? 'text-[#3b82f6] hover:bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Eye className="w-4 h-4" />
+              {longPressMenu.loc.visited ? t.markVisited : t.markUnvisited}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

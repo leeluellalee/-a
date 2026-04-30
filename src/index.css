@@ -29,12 +29,18 @@ body {
 }
 .photo-marker-inner {
   background: white;
-  padding: 6px 6px 24px 6px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+  padding: 4px 4px 16px 4px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
   width: 100%;
   height: 100%;
-  transition: transform 0.3s ease;
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.3s ease;
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.photo-marker-inner.visited {
+  background: #3b82f6; /* Tailwind blue-500 for visited */
 }
 .photo-marker-inner img {
   width: 100%;
@@ -42,8 +48,24 @@ body {
   object-fit: cover;
   background: #eee;
 }
+.empty-photo-marker {
+  width: 100%;
+  height: 100%;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1.2;
+  color: #9ca3af;
+  padding: 4px;
+}
+.photo-marker-inner.visited .empty-photo-marker {
+  background: #60a5fa;
+  color: #eff6ff;
+}
 .custom-photo-marker:hover .photo-marker-inner {
-  transform: scale(1.1) rotate(3deg);
+  transform: scale(1.15) rotate(3deg);
   z-index: 1000;
 }
 
