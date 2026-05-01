@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import exifr from 'exifr';
 import heic2any from 'heic2any';
-import { get, set } from 'idb-keyval';
+import { get, set, clear } from 'idb-keyval';
 import { Loader2, Edit3, Download, Upload as UploadIcon, Eye, EyeOff, Map as MapIcon, Menu, Globe } from 'lucide-react';
 import PhotoMap from './components/PhotoMap';
 import EditLocationModal from './components/EditLocationModal';
@@ -15,6 +15,7 @@ export default function App() {
   const [editingLocation, setEditingLocation] = useState<LocationData | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(true); // Loading state for initial data fetch
+  const [dataVersion, setDataVersion] = useState(0); // Used to force-reset components
   const [toast, setToast] = useState<{message: string, type: 'error' | 'success' | 'warning'} | null>(null);
   const [isViewMode, setIsViewMode] = useState(true); // Default to view mode for publishing
   const [showMobileSidebar, setShowMobileSidebar] = useState(false); // Toggle for mobile view
@@ -65,33 +66,55 @@ export default function App() {
 
   // Load data from local storage or static file on mount
   useEffect(() => {
+    // Failsafe: ensure loading screen is hidden after a reasonable timeout
+    const forceLoadTimer = setTimeout(() => {
+      setIsLoading(prev => {
+        if (prev) console.warn("Initial load timed out, forcing UI show");
+        return false;
+      });
+    }, 6000);
+
     const loadInitialData = async () => {
       try {
         let staticData: LocationData[] = [];
         try {
-          const baseUrl = import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : import.meta.env.BASE_URL + '/';
-          const response = await fetch(baseUrl + 'locations.json?t=' + new Date().getTime()); // cache bust
+          const envBaseUrl = import.meta.env.BASE_URL || '/';
+          const baseUrl = envBaseUrl.endsWith('/') ? envBaseUrl : envBaseUrl + '/';
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4000);
+          
+          console.log("Fetching static locations...");
+          const response = await fetch(baseUrl + 'locations.json?t=' + Date.now(), { 
+            signal: controller.signal,
+            cache: 'no-store'
+          });
+          
+          clearTimeout(timeoutId);
           if (response.ok) {
             const text = await response.text();
-            if (!text.trim().startsWith('<')) {
+            if (text && !text.trim().startsWith('<')) {
               const parsed = JSON.parse(text);
-              if (parsed && parsed.length > 0) {
+              if (parsed && Array.isArray(parsed)) {
                 staticData = parsed;
+                console.log(`Loaded ${staticData.length} static locations`);
               }
             }
           }
         } catch (error) {
-          console.log("No static locations.json found or fetch failed.");
+          console.warn("No static locations.json found or fetch failed/timed out.", error);
         }
 
         let idbData: LocationData[] = [];
         try {
-          const savedData = await get<LocationData[]>('pilgrimage_locations');
-          if (savedData && savedData.length > 0) {
+          const savedData = await Promise.race([
+            get<LocationData[]>('pilgrimage_locations'),
+            new Promise<any>((_, reject) => setTimeout(() => reject(new Error('IDB timeout')), 2500))
+          ]);
+          if (savedData && Array.isArray(savedData)) {
             idbData = savedData;
           }
         } catch (e) {
-          console.error("Failed to parse saved locations from IndexedDB", e);
+          console.error("Failed to parse saved locations from IndexedDB or timeout", e);
         }
 
         let oldLData: LocationData[] = [];
@@ -99,7 +122,7 @@ export default function App() {
         if (oldSavedData) {
           try {
             const parsed = JSON.parse(oldSavedData);
-            if (parsed && parsed.length > 0) {
+            if (parsed && Array.isArray(parsed)) {
               oldLData = parsed;
             }
           } catch (e) {
@@ -107,22 +130,47 @@ export default function App() {
           }
         }
 
-        // Merge them. Priority: IDB > Static > LocalStorage
+        // Merge them. Priority: IDB (User's latest manual work) > Static
         const locMap = new Map<string, LocationData>();
-        oldLData.forEach(loc => locMap.set(loc.id, loc));
-        staticData.forEach(loc => locMap.set(loc.id, loc));
-        idbData.forEach(loc => locMap.set(loc.id, loc));
+        
+        // 1. Load static data first (as base)
+        staticData.forEach(loc => { if(loc && loc.id) locMap.set(loc.id, loc); });
+        
+        // 2. Overwrite with LocalStorage (legacy fallback)
+        oldLData.forEach(loc => { if(loc && loc.id) locMap.set(loc.id, loc); });
+        
+        // 3. Overwrite with IDB (the most reliable and current user state)
+        idbData.forEach(loc => {
+          if (loc && loc.id) {
+            locMap.set(loc.id, loc);
+          }
+        });
 
         const merged = Array.from(locMap.values());
         if (merged.length > 0) {
-          setLocations(merged.sort((a, b) => b.createdAt - a.createdAt));
+          // Deduplicate by strict lat/lng matching to fix overlap issue
+          const coordsMap = new Map<string, LocationData>();
+          merged.forEach(loc => {
+            const key = `${loc.lat},${loc.lng}`;
+            const existing = coordsMap.get(key);
+            // Use latest createdAt or just keep first if missing
+            const currentCreated = loc.createdAt || 0;
+            const existingCreated = existing?.createdAt || 0;
+            if (!existing || currentCreated > existingCreated) {
+              coordsMap.set(key, loc);
+            }
+          });
+          const deduplicated = Array.from(coordsMap.values());
+          setLocations(deduplicated.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0)));
         }
       } finally {
         setIsLoading(false);
+        clearTimeout(forceLoadTimer);
       }
     };
 
     loadInitialData();
+    return () => clearTimeout(forceLoadTimer);
   }, []);
 
   // Save data to IndexedDB whenever it changes
@@ -130,7 +178,10 @@ export default function App() {
     if (locations.length === 0) return; // Prevent overwriting with empty array on pure mount
     const saveData = async () => {
       try {
-        await set('pilgrimage_locations', locations);
+        await Promise.race([
+          set('pilgrimage_locations', locations),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('IDB save timeout')), 2000))
+        ]);
       } catch (error: any) {
         console.error("Failed to save to IndexedDB:", error);
       }
@@ -294,6 +345,36 @@ export default function App() {
     setEditingLocation(newLoc);
   };
 
+  const handleClearCache = async () => {
+    try {
+      showToast("Resetting everything...", 'warning');
+      
+      // Clear IndexedDB
+      await Promise.race([
+        clear(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('IDB clear timeout')), 2000))
+      ]);
+      
+      // Clear all possible web storage
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // Clear app state
+      setLocations([]);
+      setDataVersion(v => v + 1);
+      
+      showToast(t.toastSuccess.replace('{count}', '0').replace('{skipped}', ''), 'success');
+      
+      // Final hard reload
+      setTimeout(() => {
+        window.location.href = window.location.origin + window.location.pathname + '?reset=' + Date.now();
+      }, 1000);
+    } catch (e) {
+      console.error(e);
+      showToast(t.toastError, 'error');
+    }
+  };
+
   const handleSaveLocation = (updatedLoc: LocationData) => {
     setLocations(prev => {
       if (!prev.find(loc => loc.id === updatedLoc.id)) {
@@ -336,6 +417,8 @@ export default function App() {
         const importedLocations = JSON.parse(event.target?.result as string);
         if (Array.isArray(importedLocations)) {
           setLocations(importedLocations);
+          setDataVersion(v => v + 1);
+          setIsLoading(false); // Ensure loading screen is dismissed on manual import
           showToast(t.toastImportSuccess, 'success');
         }
       } catch (error) {
@@ -417,6 +500,14 @@ export default function App() {
         {/* Brand & Stats */}
         <div className="p-[40px_40px_20px_40px] flex flex-col shrink-0 relative">
           <div className="absolute top-4 right-4 flex items-center gap-2">
+            <button
+              onClick={() => setIsViewMode(!isViewMode)}
+              className="text-[10px] uppercase tracking-wider flex items-center gap-1 px-2 py-1 rounded transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200"
+              title={isViewMode ? "Switch to Edit Mode" : "Switch to View Mode"}
+            >
+              {isViewMode ? <Eye className="w-3 h-3" /> : <Edit3 className="w-3 h-3" />}
+              {isViewMode ? "VIEW" : "EDIT"}
+            </button>
             <div className="relative">
               <button className="text-[10px] uppercase tracking-wider flex items-center gap-1 px-2 py-1 rounded transition-colors bg-blue-50 text-blue-700 hover:bg-blue-100">
                 <Globe className="w-3 h-3" />
@@ -481,6 +572,8 @@ export default function App() {
                          <img
                            src={loc.realPhotoUrl || loc.refPhotoUrl}
                            alt={loc.title}
+                           loading="lazy"
+                           decoding="async"
                            onClick={() => {
                              setSelectedLocation(loc);
                              setShowMobileSidebar(false);
@@ -570,6 +663,14 @@ export default function App() {
                   <UploadIcon className="w-3 h-3" /> {t.importData}
                 </label>
               </li>
+              <li>
+                <button 
+                  onClick={handleClearCache}
+                  className="text-[11px] tracking-[1px] uppercase cursor-pointer hover:underline underline-offset-8 flex items-center gap-2 text-red-500 text-left"
+                >
+                  {t.clearCache || "CLEAR DB & RELOAD"}
+                </button>
+              </li>
             </ul>
           </div>
         )}
@@ -579,6 +680,16 @@ export default function App() {
       <main className="flex-1 relative bg-[#EBE7E0] flex items-center justify-center">
         <div className="absolute inset-0 opacity-20 pointer-events-none z-[400]" style={{ backgroundImage: 'radial-gradient(var(--color-accent) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
         
+        {/* Global View/Edit Mode Toggle overlay */}
+        <button
+          onClick={() => setIsViewMode(!isViewMode)}
+          className="absolute top-4 right-4 z-[2000] shadow-md text-[10px] uppercase tracking-wider flex items-center gap-2 px-3 py-2 rounded transition-colors bg-white/90 backdrop-blur-sm text-gray-700 hover:bg-white border border-gray-200"
+          title={isViewMode ? "Switch to Edit Mode" : "Switch to View Mode"}
+        >
+          {isViewMode ? <Eye className="w-4 h-4 text-blue-500" /> : <Edit3 className="w-4 h-4 text-amber-500" />}
+          <span className="font-bold">{isViewMode ? "VIEW MODE" : "EDIT MODE"}</span>
+        </button>
+
         {isLoading ? (
           <div className="text-center text-[var(--color-ink)] opacity-50 z-10 flex flex-col items-center">
             <Loader2 className="w-8 h-8 animate-spin mb-4" />
@@ -586,6 +697,7 @@ export default function App() {
           </div>
         ) : locations.length > 0 ? (
           <PhotoMap
+            key={`map-v${dataVersion}-${locations.length}`}
             locations={locations}
             selectedLocation={selectedLocation}
             onSelectLocation={setSelectedLocation}

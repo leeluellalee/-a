@@ -153,7 +153,7 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
           html: `
             <div class="photo-marker-inner ${loc.visited ? 'visited' : ''}">
               ${pinImageUrl && pinImageUrl !== ""
-                ? `<img src="${pinImageUrl}" alt="${loc.title}" />`
+                ? `<img src="${pinImageUrl}" alt="${loc.title}" loading="lazy" decoding="async" />`
                 : `<div class="empty-photo-marker"><span class="text-[10px] text-center">${t.noPhoto}</span></div>`
               }
             </div>
@@ -165,7 +165,7 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
 
         return (
           <Marker
-            key={loc.id}
+            key={`${loc.id}-${loc.visited}`}
             position={[loc.lat, loc.lng]}
             icon={customIcon}
             eventHandlers={{
@@ -174,7 +174,7 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
           >
             <Popup className="custom-popup">
               <div>
-                <h2 className="font-display font-normal text-[18px] mb-2 truncate">
+                <h2 className="font-display font-normal text-[18px] mb-2">
                   <TranslatedText text={loc.title} targetLang={language} />
                 </h2>
                 
@@ -185,6 +185,8 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
                       <img 
                         src={loc.realPhotoUrl} 
                         alt="Real" 
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-auto max-h-48 object-contain bg-[#eee] rounded" 
                       />
                     </div>
@@ -202,6 +204,8 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
                       <img 
                         src={loc.refPhotoUrl} 
                         alt="Reference" 
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-auto max-h-48 object-contain bg-[#eee] rounded" 
                       />
                     </div>
@@ -209,7 +213,7 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
                 </div>
 
                 {loc.description && (
-                  <p className="text-[12px] leading-[1.6] text-[#666] mb-2 max-h-24 overflow-y-auto">
+                  <p className="text-[12px] leading-[1.6] text-[#666] mb-2 max-h-24 overflow-y-auto whitespace-pre-wrap">
                     <TranslatedText text={loc.description} targetLang={language} />
                   </p>
                 )}

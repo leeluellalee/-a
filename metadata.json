@@ -1,6 +1,6 @@
 {
-  "name": "旅行足迹地图",
-  "description": "上传包含地理位置信息的旅游照片，在地图上展示你的旅行足迹。",
-  "requestFramePermissions": [],
+  "name": "圣地巡礼足迹地图",
+  "description": "展示动漫圣地巡礼足迹。上传带GPS信息的照片，记录你的寻迹之旅。",
+  "requestFramePermissions": ["geolocation"],
   "majorCapabilities": []
 }

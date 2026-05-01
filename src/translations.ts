@@ -49,7 +49,8 @@ export const translations = {
     regionSendai: '仙台',
     regionTokyo: '东京',
     regionJapanOther: '日本其他',
-    regionOther: '其他'
+    regionOther: '其他',
+    clearCache: '重置所有数据并重新加载'
   },
   en: {
     title: 'Haikyu!!<br/>Pilgrimage Map',
@@ -99,7 +100,8 @@ export const translations = {
     regionSendai: 'Sendai',
     regionTokyo: 'Tokyo',
     regionJapanOther: 'Other Japan',
-    regionOther: 'Others'
+    regionOther: 'Others',
+    clearCache: 'Reset all data and reload'
   },
   ja: {
     title: '『ハイキュー!!』<br/>聖地巡礼Map',
@@ -149,7 +151,8 @@ export const translations = {
     regionSendai: '仙台',
     regionTokyo: '東京',
     regionJapanOther: '日本その他',
-    regionOther: 'その他'
+    regionOther: 'その他',
+    clearCache: '全てのデータをリセット'
   },
   ko: {
     title: '하이큐!!<br/>성지순례 Map',
@@ -199,6 +202,7 @@ export const translations = {
     regionSendai: '센다이',
     regionTokyo: '도쿄',
     regionJapanOther: '일본 기타',
-    regionOther: '기타'
+    regionOther: '기타',
+    clearCache: '모든 데이터 초기화 및 새로고침'
   }
 };
