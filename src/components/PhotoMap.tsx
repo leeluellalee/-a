@@ -175,7 +175,7 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
             <Popup className="custom-popup">
               <div>
                 <h2 className="font-display font-normal text-[18px] mb-2">
-                  <TranslatedText text={loc.title} targetLang={language} />
+                  <TranslatedText text={loc.title} translations={loc.titles} targetLang={language} />
                 </h2>
                 
                 <div className="flex flex-col gap-3 mb-3">
@@ -214,7 +214,7 @@ export default function PhotoMap({ locations, selectedLocation, onSelectLocation
 
                 {loc.description && (
                   <p className="text-[12px] leading-[1.6] text-[#666] mb-2 max-h-24 overflow-y-auto whitespace-pre-wrap">
-                    <TranslatedText text={loc.description} targetLang={language} />
+                    <TranslatedText text={loc.description} translations={loc.descriptions} targetLang={language} />
                   </p>
                 )}
 

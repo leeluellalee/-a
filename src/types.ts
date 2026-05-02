@@ -11,6 +11,8 @@ export interface LocationData {
   createdAt: number;
   authorUid: string;
   visited?: boolean;
+  titles?: Record<string, string>;
+  descriptions?: Record<string, string>;
 }
 
 export enum OperationType {

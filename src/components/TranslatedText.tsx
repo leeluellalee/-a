@@ -4,10 +4,13 @@ import { Loader2 } from 'lucide-react';
 interface Props {
   text: string;
   targetLang: string;
+  // Pre-translated map keyed by language code (e.g. { en: "...", ja: "...", ko: "..." }).
+  // When the requested language is present here we use it directly and skip the network call.
+  translations?: Record<string, string>;
   className?: string;
 }
 
-export function TranslatedText({ text, targetLang, className = "" }: Props) {
+export function TranslatedText({ text, targetLang, translations, className = "" }: Props) {
   const [translated, setTranslated] = useState(text);
   const [loading, setLoading] = useState(false);
 
@@ -22,12 +25,17 @@ export function TranslatedText({ text, targetLang, className = "" }: Props) {
       return;
     }
 
+    if (translations && translations[targetLang]) {
+      setTranslated(translations[targetLang]);
+      setLoading(false);
+      return;
+    }
+
     let isMounted = true;
     setLoading(true);
 
-    // Use free Google Translate API
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
-    
+
     fetch(url)
       .then(r => r.json())
       .then(data => {
@@ -52,7 +60,7 @@ export function TranslatedText({ text, targetLang, className = "" }: Props) {
     return () => {
       isMounted = false;
     };
-  }, [text, targetLang]);
+  }, [text, targetLang, translations]);
 
   if (loading) {
     return (
