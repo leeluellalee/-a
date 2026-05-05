@@ -92,7 +92,7 @@ function CustomControls({ showToast, language }: { showToast: (msg: string, type
           })} 
         />
       )}
-      <div style={{ position: 'absolute', zIndex: 1000, bottom: '40px', right: '10px' }}>
+      <div className="absolute z-[2001] right-[10px] bottom-[80px] md:bottom-[40px]">
         <div className="leaflet-control leaflet-bar" style={{ border: 'none', margin: 0, boxShadow: '0 1px 5px rgba(0,0,0,0.65)' }}>
           <button
             onClick={(e) => {
